@@ -1,133 +1,167 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Resume AI Matcher Pro</title>
+    <title>Resume AI Matcher</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
         body {
-            font-family: Arial;
-            background: #f4f6f9;
-            padding: 40px;
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
+
         .container {
-            width: 75%;
-            margin: auto;
-            background: white;
-            padding: 30px;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(15px);
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 700px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+            color: white;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            font-weight: 600;
+        }
+
+        label {
+            font-size: 14px;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        textarea, select, input[type="file"] {
+            width: 100%;
+            padding: 12px;
             border-radius: 10px;
-            box-shadow: 0px 0px 15px rgba(0,0,0,0.1);
+            border: none;
+            margin-bottom: 15px;
+            font-size: 14px;
         }
+
         textarea {
+            resize: none;
+        }
+
+        button {
             width: 100%;
-            padding: 10px;
-        }
-        select, input[type="file"] {
-            padding: 8px;
-            width: 100%;
-            margin-bottom: 10px;
-        }
-        input[type="submit"] {
-            padding: 10px 20px;
-            background: #4CAF50;
-            color: white;
+            padding: 12px;
+            border-radius: 10px;
             border: none;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        .download-btn {
-            padding: 10px 20px;
-            background: #007BFF;
+            background: #ff7eb3;
             color: white;
-            border: none;
+            font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            border-radius: 5px;
+            transition: 0.3s ease;
         }
-        .progress-bar {
-            background: #ddd;
+
+        button:hover {
+            background: #ff4f9a;
+            transform: scale(1.05);
+        }
+
+        .score-box {
+            margin-top: 25px;
+            text-align: center;
+        }
+
+        .progress {
+            height: 20px;
+            background: rgba(255,255,255,0.3);
             border-radius: 20px;
             overflow: hidden;
-            margin-top: 15px;
+            margin-top: 10px;
         }
-        .progress {
-            height: 25px;
-            text-align: center;
-            color: white;
-            line-height: 25px;
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00f2fe, #4facfe);
+            width: {{ score if score else 0 }}%;
+            text-align: right;
+            padding-right: 10px;
+            line-height: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            transition: width 1s ease-in-out;
         }
-        .section {
-            margin-top: 25px;
+
+        .download-btn {
+            margin-top: 20px;
+            background: #00c9a7;
         }
-        ul {
-            color: red;
+
+        .download-btn:hover {
+            background: #00a88f;
+        }
+
+        @media(max-width: 600px) {
+            .container {
+                padding: 25px;
+            }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Resume AI Matcher Pro</h2>
+    <h2>🚀 Resume AI Matcher</h2>
 
     <form method="POST" enctype="multipart/form-data">
-
-        <p><b>Select Role:</b></p>
+        
+        <label>Choose Role</label>
         <select name="role" required>
-            {% for role in roles %}
-                <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>
-                    {{ role }}
-                </option>
-            {% endfor %}
+            <option value="">Select Role</option>
+            <option>Software Developer</option>
+            <option>Data Scientist</option>
+            <option>Web Developer</option>
+            <option>Machine Learning Engineer</option>
         </select>
 
-        <p><b>Select Experience Level:</b></p>
-        <select name="level" required>
-            <option value="Fresher">Fresher</option>
-            <option value="Experienced">Experienced</option>
+        <label>Experience Level</label>
+        <select name="experience" required>
+            <option value="">Select Level</option>
+            <option>Fresher</option>
+            <option>Experienced</option>
         </select>
 
-        <p><b>Auto-Loaded Job Description:</b></p>
-        <textarea rows="6" readonly>{{ job_description }}</textarea>
+        <label>Paste Job Description</label>
+        <textarea name="job_description" rows="5" required></textarea>
 
-        <p><b>Upload Resume (PDF, DOCX, TXT):</b></p>
+        <label>Upload Resume (PDF/DOCX/TXT)</label>
         <input type="file" name="resume" required>
 
-        <input type="submit" value="Analyze Resume">
+        <button type="submit">Check Match Score</button>
     </form>
 
     {% if score is not none %}
-
-        <div class="section">
-            <h3 style="color: {{ score_color }};">
-                Match Score: {{ score }}%
-            </h3>
-
-            <div class="progress-bar">
-                <div class="progress"
-                     style="width: {{ score }}%; background: {{ score_color }};">
-                    {{ score }}%
-                </div>
-            </div>
+    <div class="score-box">
+        <h3>Match Score: {{ score }}%</h3>
+        <div class="progress">
+            <div class="progress-bar">{{ score }}%</div>
         </div>
 
-        <div class="section">
-            <h3>Missing Skills:</h3>
-            <ul>
-                {% for word in missing_keywords %}
-                    <li>{{ word }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-
-        {% if report_ready %}
-        <div class="section">
-            <a href="/download">
-                <button class="download-btn">
-                    Download Report PDF
-                </button>
-            </a>
-        </div>
-        {% endif %}
-
+        <form action="/download-report" method="GET">
+            <button class="download-btn">Download Report</button>
+        </form>
+    </div>
     {% endif %}
-
 </div>
 
 </body>
