@@ -1,0 +1,218 @@
+from flask import Flask, render_template, request, send_file
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import PyPDF2
+import docx
+import os
+
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer,
+    Table, TableStyle, ListFlowable, ListItem
+)
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import A4
+
+app = Flask(__name__)
+
+# Ensure static folder exists
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+# -------------------------
+# Role Keywords
+# -------------------------
+roles = {
+    "Data Scientist": ["python", "machine learning", "data analysis", "pandas", "numpy", "sql"],
+    "Web Developer": ["html", "css", "javascript", "react", "node", "flask"],
+    "Software Engineer": ["java", "python", "c++", "algorithms", "data structures"]
+}
+
+# -------------------------
+# Job Description Templates
+# -------------------------
+job_templates = {
+    "Data Scientist": {
+        "Fresher": """Looking for a Data Scientist Fresher with strong fundamentals in Python, statistical analysis, machine learning, data visualization, pandas, numpy, and SQL.""",
+        "Experienced": """Experienced Data Scientist with 2+ years in machine learning, predictive modeling, deep learning, NLP, Python, SQL, and deployment experience."""
+    },
+    "Web Developer": {
+        "Fresher": """Seeking a Web Developer Fresher with knowledge in HTML, CSS, JavaScript, responsive design, and Git.""",
+        "Experienced": """Web Developer with 2+ years experience in full-stack development using JavaScript, React, Node.js, REST APIs, and scalable applications."""
+    },
+    "Software Engineer": {
+        "Fresher": """Software Engineer Fresher with strong skills in Java, C++, data structures, algorithms, and problem solving.""",
+        "Experienced": """Experienced Software Engineer with 2+ years in development, system design, Java, Python, data structures, algorithms, and version control."""
+    }
+}
+
+# -------------------------
+# Resume Text Extraction
+# -------------------------
+def extract_text_from_pdf(file):
+    reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        if page.extract_text():
+            text += page.extract_text()
+    return text
+
+def extract_text_from_docx(file):
+    document = docx.Document(file)
+    return "\n".join([para.text for para in document.paragraphs])
+
+# -------------------------
+# Attractive PDF Generator
+# -------------------------
+def generate_report(score, role, level, missing_keywords):
+    file_path = "static/report.pdf"
+    doc = SimpleDocTemplate(file_path, pagesize=A4)
+    elements = []
+
+    styles = getSampleStyleSheet()
+
+    # Title Style
+    title_style = styles["Heading1"]
+    title_style.textColor = colors.HexColor("#2E86C1")
+
+    score_style = ParagraphStyle(
+        name="ScoreStyle",
+        parent=styles["Heading2"],
+        fontSize=22,
+        textColor=colors.green if score >= 70 else
+                  colors.orange if score >= 40 else
+                  colors.red
+    )
+
+    # Title
+    elements.append(Paragraph("Resume Analysis Report", title_style))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Info Table
+    info_data = [
+        ["Role Applied:", role],
+        ["Experience Level:", level],
+        ["Match Score:", f"{score}%"]
+    ]
+
+    table = Table(info_data, colWidths=[2.5 * inch, 3.5 * inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+
+    elements.append(table)
+    elements.append(Spacer(1, 0.4 * inch))
+
+    # Big Score
+    elements.append(Paragraph(f"Overall Match Score: {score}%", score_style))
+    elements.append(Spacer(1, 0.4 * inch))
+
+    # Missing Skills
+    elements.append(Paragraph("Missing Skills Identified:", styles["Heading2"]))
+    elements.append(Spacer(1, 0.2 * inch))
+
+    if missing_keywords:
+        skill_list = [ListItem(Paragraph(skill, styles["Normal"])) for skill in missing_keywords]
+        elements.append(ListFlowable(skill_list, bulletType='bullet'))
+    else:
+        elements.append(Paragraph("No major skills missing. Great alignment!", styles["Normal"]))
+
+    elements.append(Spacer(1, 0.4 * inch))
+
+    # Suggestions
+    elements.append(Paragraph("Improvement Suggestions:", styles["Heading2"]))
+    elements.append(Spacer(1, 0.2 * inch))
+
+    suggestions = [
+        "Add missing technical skills relevant to the role.",
+        "Include measurable achievements.",
+        "Mention certifications and industry tools.",
+        "Add strong project descriptions aligned to job.",
+        "Optimize resume with ATS-friendly keywords."
+    ]
+
+    suggestion_list = [ListItem(Paragraph(s, styles["Normal"])) for s in suggestions]
+    elements.append(ListFlowable(suggestion_list, bulletType='bullet'))
+
+    elements.append(Spacer(1, 0.5 * inch))
+    elements.append(Paragraph("Generated by Resume AI Matcher Pro", styles["Normal"]))
+
+    doc.build(elements)
+    return file_path
+
+# -------------------------
+# Download Route
+# -------------------------
+@app.route('/download')
+def download_report():
+    return send_file("static/report.pdf", as_attachment=True)
+
+# -------------------------
+# Main Route
+# -------------------------
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    score = None
+    missing_keywords = []
+    resume_text = ""
+    job_description = ""
+    selected_role = None
+    selected_level = None
+    score_color = "black"
+    report_ready = False
+
+    if request.method == 'POST':
+
+        selected_role = request.form['role']
+        selected_level = request.form['level']
+        resume_file = request.files['resume']
+
+        job_description = job_templates[selected_role][selected_level]
+
+        if resume_file.filename.endswith('.pdf'):
+            resume_text = extract_text_from_pdf(resume_file)
+        elif resume_file.filename.endswith('.docx'):
+            resume_text = extract_text_from_docx(resume_file)
+        else:
+            resume_text = resume_file.read().decode('utf-8')
+
+        text_data = [resume_text, job_description]
+
+        cv = CountVectorizer(stop_words='english')
+        matrix = cv.fit_transform(text_data)
+        similarity = cosine_similarity(matrix)[0][1]
+
+        score = round(similarity * 100, 2)
+
+        if score < 40:
+            score_color = "red"
+        elif score < 70:
+            score_color = "orange"
+        else:
+            score_color = "green"
+
+        resume_words = set(resume_text.lower().split())
+        job_words = set(job_description.lower().split())
+        missing_keywords = list(job_words - resume_words)[:10]
+
+        generate_report(score, selected_role, selected_level, missing_keywords)
+        report_ready = True
+
+    return render_template("index.html",
+                           score=score,
+                           missing_keywords=missing_keywords,
+                           resume_text=resume_text,
+                           job_description=job_description,
+                           roles=roles.keys(),
+                           selected_role=selected_role,
+                           selected_level=selected_level,
+                           score_color=score_color,
+                           report_ready=report_ready)
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000)
