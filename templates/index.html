@@ -75,7 +75,7 @@
             margin-bottom: 20px;
         }
 
-        textarea, select, input[type="file"] {
+        select, input[type="file"] {
             width: 100%;
             padding: 12px;
             border-radius: 10px;
@@ -124,13 +124,6 @@
             transition: width 1s ease-in-out;
         }
 
-        .about {
-            margin-top: 50px;
-            text-align: center;
-            width: 90%;
-            max-width: 700px;
-        }
-
         footer {
             margin-top: 50px;
             padding: 20px;
@@ -143,7 +136,6 @@
             color: #00f2fe;
             text-decoration: none;
         }
-
     </style>
 </head>
 
@@ -155,20 +147,26 @@
 </nav>
 
 <div class="container">
-    <h2>Match Your Resume with Job Description</h2>
+    <h2>Match Your Resume with Job Role</h2>
 
     <form method="POST" enctype="multipart/form-data" onsubmit="showLoader()">
 
+        <!-- Role Dropdown -->
         <select name="role" required>
             <option value="">Select Role</option>
-            <option>Software Developer</option>
-            <option>Data Scientist</option>
-            <option>Web Developer</option>
-            <option>ML Engineer</option>
+            <option value="Software Engineer">Software Engineer</option>
+            <option value="Data Scientist">Data Scientist</option>
+            <option value="Web Developer">Web Developer</option>
         </select>
 
-        <textarea name="job_description" rows="4" placeholder="Paste Job Description..." required></textarea>
+        <!-- Experience Dropdown -->
+        <select name="level" required>
+            <option value="">Select Experience Level</option>
+            <option value="Fresher">Fresher</option>
+            <option value="Experienced">Experienced</option>
+        </select>
 
+        <!-- Resume Upload -->
         <input type="file" name="resume" required>
 
         <button type="submit">Check Match Score</button>
@@ -184,12 +182,13 @@
         <div class="progress">
             <div class="progress-bar">{{ score }}%</div>
         </div>
-    {% endif %}
-</div>
 
-<div class="about">
-    <h3>About This Project</h3>
-    <p>This AI-based system compares resumes with job descriptions and provides a match score to help candidates improve their applications.</p>
+        {% if report_ready %}
+            <a href="/download">
+                <button style="margin-top:15px;">Download Detailed Report</button>
+            </a>
+        {% endif %}
+    {% endif %}
 </div>
 
 <footer>
