@@ -16,18 +16,12 @@ from reportlab.lib.pagesizes import A4
 
 app = Flask(__name__)
 
+# ✅ Increase upload limit to 20MB (Fixes Bad Request 400)
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
+
 # Ensure static folder exists
 if not os.path.exists("static"):
     os.makedirs("static")
-
-# -------------------------
-# Role Keywords
-# -------------------------
-roles = {
-    "Data Scientist": ["python", "machine learning", "data analysis", "pandas", "numpy", "sql"],
-    "Web Developer": ["html", "css", "javascript", "react", "node", "flask"],
-    "Software Engineer": ["java", "python", "c++", "algorithms", "data structures"]
-}
 
 # -------------------------
 # Job Description Templates
@@ -54,25 +48,24 @@ def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
     for page in reader.pages:
-        if page.extract_text():
-            text += page.extract_text()
+        text += page.extract_text() or ""
     return text
+
 
 def extract_text_from_docx(file):
     document = docx.Document(file)
     return "\n".join([para.text for para in document.paragraphs])
 
+
 # -------------------------
-# Attractive PDF Generator
+# PDF Report Generator
 # -------------------------
 def generate_report(score, role, level, missing_keywords):
     file_path = "static/report.pdf"
     doc = SimpleDocTemplate(file_path, pagesize=A4)
     elements = []
-
     styles = getSampleStyleSheet()
 
-    # Title Style
     title_style = styles["Heading1"]
     title_style.textColor = colors.HexColor("#2E86C1")
 
@@ -85,11 +78,9 @@ def generate_report(score, role, level, missing_keywords):
                   colors.red
     )
 
-    # Title
     elements.append(Paragraph("Resume Analysis Report", title_style))
     elements.append(Spacer(1, 0.3 * inch))
 
-    # Info Table
     info_data = [
         ["Role Applied:", role],
         ["Experience Level:", level],
@@ -100,19 +91,13 @@ def generate_report(score, role, level, missing_keywords):
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.whitesmoke),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
     ]))
 
     elements.append(table)
     elements.append(Spacer(1, 0.4 * inch))
-
-    # Big Score
     elements.append(Paragraph(f"Overall Match Score: {score}%", score_style))
     elements.append(Spacer(1, 0.4 * inch))
 
-    # Missing Skills
     elements.append(Paragraph("Missing Skills Identified:", styles["Heading2"]))
     elements.append(Spacer(1, 0.2 * inch))
 
@@ -124,7 +109,6 @@ def generate_report(score, role, level, missing_keywords):
 
     elements.append(Spacer(1, 0.4 * inch))
 
-    # Suggestions
     elements.append(Paragraph("Improvement Suggestions:", styles["Heading2"]))
     elements.append(Spacer(1, 0.2 * inch))
 
@@ -145,12 +129,14 @@ def generate_report(score, role, level, missing_keywords):
     doc.build(elements)
     return file_path
 
+
 # -------------------------
 # Download Route
 # -------------------------
 @app.route('/download')
 def download_report():
     return send_file("static/report.pdf", as_attachment=True)
+
 
 # -------------------------
 # Main Route
@@ -159,18 +145,16 @@ def download_report():
 def index():
     score = None
     missing_keywords = []
-    resume_text = ""
-    job_description = ""
-    selected_role = None
-    selected_level = None
-    score_color = "black"
     report_ready = False
 
     if request.method == 'POST':
 
-        selected_role = request.form['role']
-        selected_level = request.form['level']
-        resume_file = request.files['resume']
+        selected_role = request.form.get('role')
+        selected_level = request.form.get('level')
+        resume_file = request.files.get('resume')
+
+        if not resume_file:
+            return "No file uploaded"
 
         job_description = job_templates[selected_role][selected_level]
 
@@ -179,7 +163,7 @@ def index():
         elif resume_file.filename.endswith('.docx'):
             resume_text = extract_text_from_docx(resume_file)
         else:
-            resume_text = resume_file.read().decode('utf-8')
+            resume_text = resume_file.read().decode('utf-8', errors='ignore')
 
         text_data = [resume_text, job_description]
 
@@ -188,13 +172,6 @@ def index():
         similarity = cosine_similarity(matrix)[0][1]
 
         score = round(similarity * 100, 2)
-
-        if score < 40:
-            score_color = "red"
-        elif score < 70:
-            score_color = "orange"
-        else:
-            score_color = "green"
 
         resume_words = set(resume_text.lower().split())
         job_words = set(job_description.lower().split())
@@ -206,16 +183,12 @@ def index():
     return render_template("index.html",
                            score=score,
                            missing_keywords=missing_keywords,
-                           resume_text=resume_text,
-                           job_description=job_description,
-                           roles=roles.keys(),
-                           selected_role=selected_role,
-                           selected_level=selected_level,
-                           score_color=score_color,
                            report_ready=report_ready)
 
-import os
 
+# -------------------------
+# Run App
+# -------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
