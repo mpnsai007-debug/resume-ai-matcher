@@ -332,6 +332,16 @@ function closeSignup(){
     document.getElementById("signupModal").style.display="none";
 }
 
+/* AUTO LOGIN POPUP WHEN PAGE LOADS */
+
+window.onload = function(){
+
+    {% if not user %}
+        document.getElementById("loginModal").style.display = "flex";
+    {% endif %}
+
+}
+
 </script>
 
 </body>
