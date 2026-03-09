@@ -2,6 +2,7 @@ Flask
 scikit-learn
 PyPDF2
 python-docx
+wikipedia
 reportlab
 gunicorn
-wikipedia
+Werkzeug
