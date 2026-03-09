@@ -1,31 +1,52 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, redirect, session
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import PyPDF2
 import docx
 import os
 import wikipedia
+import sqlite3
 
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer,
-    Table, TableStyle, ListFlowable, ListItem
-)
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
 
 app = Flask(__name__)
+app.secret_key = "super_secret_key_123"
 
-# ✅ Increase upload size (20MB)
 app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024
 
-# Ensure static folder exists
+# Create static folder if missing
 if not os.path.exists("static"):
     os.makedirs("static")
 
 # -------------------------
-# Wikipedia Role Mapping
+# DATABASE
+# -------------------------
+def init_db():
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        email TEXT UNIQUE,
+        password TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# -------------------------
+# WIKIPEDIA ROLE MAPPING
 # -------------------------
 wiki_mapping = {
     "Data Scientist": "Data science",
@@ -33,164 +54,182 @@ wiki_mapping = {
     "Software Engineer": "Software engineering"
 }
 
-# -------------------------
-# Fetch Job Description from Wikipedia
-# -------------------------
-def get_job_description_from_wikipedia(role, level):
+def get_job_description(role, level):
     try:
-        page_name = wiki_mapping.get(role, role)
-        summary = wikipedia.summary(page_name, sentences=5)
+        page = wiki_mapping.get(role, role)
+        summary = wikipedia.summary(page, sentences=5)
 
         if level == "Fresher":
-            level_text = (
-                "Entry-level candidate expected to have strong fundamentals, "
-                "academic knowledge, and basic project experience."
-            )
+            extra = "Entry-level candidate expected to have strong fundamentals and academic knowledge."
         else:
-            level_text = (
-                "Candidate expected to have real-world experience, "
-                "industry exposure, system design knowledge, and project leadership."
-            )
+            extra = "Candidate expected to have industry experience and real-world project exposure."
 
-        return summary + "\n\n" + level_text
+        return summary + " " + extra
 
-    except Exception:
-        return "Professional technical role requiring analytical thinking and problem-solving skills."
+    except:
+        return "Professional technical role requiring analytical and problem solving skills."
 
 # -------------------------
-# Resume Text Extraction
+# RESUME EXTRACTION
 # -------------------------
-def extract_text_from_pdf(file):
+def extract_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
-    for page in reader.pages:
-        text += page.extract_text() or ""
+    for p in reader.pages:
+        text += p.extract_text() or ""
     return text
 
-
-def extract_text_from_docx(file):
-    document = docx.Document(file)
-    return "\n".join([para.text for para in document.paragraphs])
+def extract_docx(file):
+    doc = docx.Document(file)
+    return "\n".join([p.text for p in doc.paragraphs])
 
 # -------------------------
-# PDF Report Generator
+# PDF REPORT
 # -------------------------
-def generate_report(score, role, level, missing_keywords):
-    file_path = "static/report.pdf"
-    doc = SimpleDocTemplate(file_path, pagesize=A4)
-    elements = []
+def generate_report(score, role, level, missing):
+    path = "static/report.pdf"
+
+    doc = SimpleDocTemplate(path, pagesize=A4)
     styles = getSampleStyleSheet()
+    elements = []
 
-    title_style = styles["Heading1"]
-    title_style.textColor = colors.HexColor("#2E86C1")
+    elements.append(Paragraph("Resume Analysis Report", styles['Heading1']))
+    elements.append(Spacer(1,0.3*inch))
 
-    score_style = ParagraphStyle(
-        name="ScoreStyle",
-        parent=styles["Heading2"],
-        fontSize=20,
-        textColor=colors.green if score >= 70 else
-                  colors.orange if score >= 40 else
-                  colors.red
-    )
-
-    elements.append(Paragraph("Resume Analysis Report", title_style))
-    elements.append(Spacer(1, 0.3 * inch))
-
-    info_data = [
-        ["Role Applied:", role],
-        ["Experience Level:", level],
-        ["Match Score:", f"{score}%"]
+    data = [
+        ["Role", role],
+        ["Experience", level],
+        ["Score", str(score)+"%"]
     ]
 
-    table = Table(info_data, colWidths=[2.5 * inch, 3.5 * inch])
+    table = Table(data)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.whitesmoke),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('GRID',(0,0),(-1,-1),1,colors.grey)
     ]))
 
     elements.append(table)
-    elements.append(Spacer(1, 0.4 * inch))
-    elements.append(Paragraph(f"Overall Match Score: {score}%", score_style))
-    elements.append(Spacer(1, 0.4 * inch))
+    elements.append(Spacer(1,0.3*inch))
 
-    elements.append(Paragraph("Missing Skills Identified:", styles["Heading2"]))
-    elements.append(Spacer(1, 0.2 * inch))
+    elements.append(Paragraph("Missing Skills:", styles['Heading2']))
 
-    if missing_keywords:
-        skill_list = [ListItem(Paragraph(skill, styles["Normal"])) for skill in missing_keywords]
-        elements.append(ListFlowable(skill_list, bulletType='bullet'))
-    else:
-        elements.append(Paragraph("No major skills missing. Excellent alignment!", styles["Normal"]))
-
-    elements.append(Spacer(1, 0.4 * inch))
-    elements.append(Paragraph("Generated by Resume AI Matcher Pro", styles["Normal"]))
+    for m in missing:
+        elements.append(Paragraph("- "+m, styles['Normal']))
 
     doc.build(elements)
-    return file_path
 
 # -------------------------
-# Download Route
+# AUTH ROUTES
+# -------------------------
+@app.route("/signup", methods=["POST"])
+def signup():
+
+    username = request.form["username"]
+    email = request.form["email"]
+    password = generate_password_hash(request.form["password"])
+
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+
+    try:
+        c.execute("INSERT INTO users(username,email,password) VALUES(?,?,?)",
+                  (username,email,password))
+        conn.commit()
+    except:
+        return redirect("/")
+
+    conn.close()
+
+    session["user"] = username
+    return redirect("/")
+
+
+@app.route("/login", methods=["POST"])
+def login():
+
+    email = request.form["email"]
+    password = request.form["password"]
+
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users WHERE email=?", (email,))
+    user = c.fetchone()
+
+    conn.close()
+
+    if user and check_password_hash(user[3], password):
+        session["user"] = user[1]
+
+    return redirect("/")
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user", None)
+    return redirect("/")
+
+# -------------------------
+# DOWNLOAD REPORT
 # -------------------------
 @app.route('/download')
-def download_report():
+def download():
     return send_file("static/report.pdf", as_attachment=True)
 
 # -------------------------
-# Main Route
+# MAIN PAGE
 # -------------------------
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET","POST"])
 def index():
-    score = None
-    missing_keywords = []
-    report_ready = False
 
-    if request.method == 'POST':
+    score=None
+    missing=[]
+    ready=False
 
-        selected_role = request.form.get('role')
-        selected_level = request.form.get('level')
-        resume_file = request.files.get('resume')
+    if request.method=="POST":
 
-        # Safety checks
-        if not selected_role or not selected_level:
-            return "Role or Experience Level not selected"
+        role = request.form.get("role")
+        level = request.form.get("level")
+        file = request.files.get("resume")
 
-        if not resume_file or resume_file.filename == "":
-            return "No file uploaded"
+        if not role or not level:
+            return redirect("/")
 
-        # Get dynamic job description
-        job_description = get_job_description_from_wikipedia(selected_role, selected_level)
+        jd = get_job_description(role,level)
 
-        # Extract resume text
-        if resume_file.filename.endswith('.pdf'):
-            resume_text = extract_text_from_pdf(resume_file)
-        elif resume_file.filename.endswith('.docx'):
-            resume_text = extract_text_from_docx(resume_file)
+        if file.filename.endswith(".pdf"):
+            resume = extract_pdf(file)
+
+        elif file.filename.endswith(".docx"):
+            resume = extract_docx(file)
+
         else:
-            resume_text = resume_file.read().decode('utf-8', errors='ignore')
+            resume = file.read().decode("utf-8", errors="ignore")
 
-        # Similarity calculation
-        text_data = [resume_text, job_description]
-        cv = CountVectorizer(stop_words='english')
-        matrix = cv.fit_transform(text_data)
-        similarity = cosine_similarity(matrix)[0][1]
+        data=[resume,jd]
 
-        score = round(similarity * 100, 2)
+        cv = CountVectorizer(stop_words="english")
+        matrix = cv.fit_transform(data)
 
-        resume_words = set(resume_text.lower().split())
-        job_words = set(job_description.lower().split())
-        missing_keywords = list(job_words - resume_words)[:10]
+        sim = cosine_similarity(matrix)[0][1]
+        score = round(sim*100,2)
 
-        generate_report(score, selected_role, selected_level, missing_keywords)
-        report_ready = True
+        r=set(resume.lower().split())
+        j=set(jd.lower().split())
+
+        missing=list(j-r)[:10]
+
+        generate_report(score,role,level,missing)
+        ready=True
 
     return render_template("index.html",
                            score=score,
-                           missing_keywords=missing_keywords,
-                           report_ready=report_ready)
+                           missing_keywords=missing,
+                           report_ready=ready,
+                           user=session.get("user"))
 
 # -------------------------
-# Run App
+# RUN
 # -------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port=int(os.environ.get("PORT",5000))
+    app.run(host="0.0.0.0",port=port)
